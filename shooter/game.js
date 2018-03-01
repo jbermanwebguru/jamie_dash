@@ -7,19 +7,54 @@ const States = {
     GAME_OVER: 'game_over'
 };
 
+var keys = { 37: 1, 38: 1, 39: 1, 40: 1 };
+
+function preventDefault(e) {
+    e = e || window.event;
+    if (e.preventDefault)
+        e.preventDefault();
+    e.returnValue = false;
+}
+
+function preventDefaultForScrollKeys(e) {
+    if (keys[e.keyCode]) {
+        preventDefault(e);
+        return false;
+    }
+}
+
+function disableScroll() {
+    if (window.addEventListener) // older FF
+        window.addEventListener('DOMMouseScroll', preventDefault, false);
+    window.onwheel = preventDefault; // modern standard
+    window.onmousewheel = document.onmousewheel = preventDefault; // older browsers, IE
+    window.ontouchmove = preventDefault; // mobile
+    document.onkeydown = preventDefaultForScrollKeys;
+}
+
+function enableScroll() {
+    if (window.removeEventListener)
+        window.removeEventListener('DOMMouseScroll', preventDefault, false);
+    window.onmousewheel = document.onmousewheel = null;
+    window.onwheel = null;
+    window.ontouchmove = null;
+    document.onkeydown = null;
+}
+
+const BACKGROUND_SCROLL_SPEED = 15;
 const MAX_LIVES = 10;
-const START_LIVES = 5;
+const START_LIVES = 8;
 const SHIP_SPEED = 300; // per second
 const MAX_RATE_OF_FIRE = 10; // per second
 const START_RATE_OF_FIRE = 2;
 const BULLET_SPEED = 1000; // per second
-const ENEMY1_SPEED = 100; // per second
-const ENEMY2_SPEED = 800; // per second
-const ENEMY1_CHANCE = .2; // 20% per second
-const ENEMY2_CHANCE = .8; // 80% per second
+const ENEMY1_SPEED = 200; // per second
+const ENEMY2_SPEED = 250; // per second
+const ENEMY1_CHANCE = 0.5;
+const ENEMY2_CHANCE = 0.6;
 const ENEMY_SPAWN_DISTANCE = 200;
-const HEALTH_CHANCE = .1; // 10% per second
-const AMMO_CHANCE = .1; // 10% per second
+const HEALTH_CHANCE = .5; // 10% per second
+const AMMO_CHANCE = .005; // 10% per second
 const ENEMY1_HEALTH = 5;
 const ENEMY2_HEALTH = 1;
 const PICKUP_SPEED = 600;
@@ -32,7 +67,7 @@ class Game extends Engine {
     }
 
     onTick(time) {
-        switch(this.state) {
+        switch (this.state) {
             case States.STARTUP:
                 this.initializing = true;
                 this.initStartScreen();
@@ -59,7 +94,7 @@ class Game extends Engine {
 
     initStartScreen() {
         this.empty();
-        let title = new TextSprite('Space Shooter', this.width / 2, this.height / 2 - 200);
+        let title = new TextSprite('Black Panther Simulator', this.width / 2, this.height / 2 - 200);
         title.size = '100px';
         title.align = 'center';
         this.addChild(title);
@@ -73,7 +108,17 @@ class Game extends Engine {
         this.changeState(States.START_SCREEN);
     }
 
+    togglePause() {
+        console.log("togglePause");
+        this.paused = !this.paused;
+    }
+
     initGame() {
+        disableScroll();
+
+        console.log("test");
+        this.paused = false;
+
         this.lives = START_LIVES;
         this.score = 0;
         this.rateOfFire = START_RATE_OF_FIRE;
@@ -83,6 +128,7 @@ class Game extends Engine {
         this.shots = [];
         this.enemies = [];
         this.pickups = [];
+        this.bad_bullets = [];
 
         this.empty();
 
@@ -97,21 +143,39 @@ class Game extends Engine {
         this.scoreText.size = '30px';
 
         Promise.all([
-            ImageSprite.create('starfield').then(background => {
-                this.background = background;
+            ImageSprite.create('jungle').then(background1 => {
+                background1.opacity = 0.5;
+                this.background1 = background1;
             }),
-            ImageSprite.create('ship').then(ship => {
-                ship.x = 20;
-                ship.y = (this.height - ship.height) / 2;
-                this.ship = ship;
+            ImageSprite.create('jungle').then(background2 => {
+                background2.opacity = 0.5;
+                this.background2 = background2;
+                this.background2.x = this.background2.width;
             }),
-            ImageSprite.create('enemy1').then(enemy1 => {
+            ImageSprite.create('panther1').then(ship1 => {
+                ship1.x = 20;
+                ship1.scale = 0.6;
+                ship1.y = (this.height - ship1.height) / 2 + 200;
+                this.ship = ship1;
+            }),
+            ImageSprite.create('panther2').then(ship2 => {
+                ship2.x = 20;
+                ship2.scale = 0.6;
+                ship2.y = (this.height - ship2.height) / 2 + 200;
+                ship2.hide = true;
+                this.ship2 = ship2;
+            }),
+            ImageSprite.create('poacher').then(enemy1 => {
                 this.enemy1 = enemy1;
             }),
-            ImageSprite.create('enemy2').then(enemy2 => {
+            ImageSprite.create('bad_bullet').then(bad_bullet => {
+                this.bad_bullet = bad_bullet;
+            }),
+            ImageSprite.create('bear').then(enemy2 => {
                 this.enemy2 = enemy2;
             }),
-            ImageSprite.create('health').then(health => {
+            ImageSprite.create('steak').then(health => {
+                health.scale = 0.3;
                 this.health = health;
             }),
             ImageSprite.create('heart').then(heart => {
@@ -125,7 +189,11 @@ class Game extends Engine {
                 this.bullet = bullet;
             })
         ]).then(() => {
-            this.addChild(this.background);
+            this.addChild(this.background1);
+            this.addChild(this.background2);
+
+            this.background1.onClick = () => this.togglePause();
+            this.background2.onClick = () => this.togglePause();
 
             this.hearts = [];
             for (let i = 0; i < MAX_LIVES; i++) {
@@ -137,6 +205,7 @@ class Game extends Engine {
             }
 
             this.addChild(this.ship);
+            this.addChild(this.ship2);
             this.addChild(this.scoreText);
             this.removeChild(this.loadingMessage);
             this.changeState(States.GAME);
@@ -165,14 +234,46 @@ class Game extends Engine {
     }
 
     tickGame(time) {
+        if (this.paused)
+            return;
+
         let timeInSeconds = time / 1000;
+
+        this.background1.x -= BACKGROUND_SCROLL_SPEED;
+        this.background2.x -= BACKGROUND_SCROLL_SPEED;
+        if (this.background1.x <= -this.background1.width + BACKGROUND_SCROLL_SPEED) {
+            this.background1.x = 0;
+            this.background2.x = this.background2.width;
+        }
+
         if (this.keys.ArrowUp) {
             this.ship.y = Math.max(0, this.ship.y - SHIP_SPEED * timeInSeconds);
-        } 
-        
-        if (this.keys.ArrowDown) {
-            this.ship.y = Math.min(this.height - this.ship.height, this.ship.y + SHIP_SPEED * timeInSeconds);
         }
+
+        if (this.keys.ArrowDown) {
+            this.ship.y = Math.min(this.height - this.ship.height + 200, this.ship.y + SHIP_SPEED * timeInSeconds);
+        }
+
+        if (this.keys.ArrowLeft) {
+            this.ship.x = Math.max(0, this.ship.x - SHIP_SPEED * timeInSeconds);
+        }
+
+        if (this.keys.ArrowRight) {
+            this.ship.x = Math.min(this.width - this.ship.width, this.ship.x + SHIP_SPEED * timeInSeconds);
+        }
+
+        this.ship2.x = this.ship.x;
+        this.ship2.y = this.ship.y;
+
+        if (Math.round(timeInSeconds * 1000) % 3 == 1) {
+            this.ship2.hide = false;
+            this.ship.hide = true;
+        }
+        if (Math.round(timeInSeconds * 1000) % 3 == 0) {
+            this.ship2.hide = true;
+            this.ship.hide = false;
+        }
+
 
         this.shoot(time);
 
@@ -189,7 +290,7 @@ class Game extends Engine {
             this.spawnEnemy(this.enemy2);
         }
 
-        if (Math.random() < HEALTH_CHANCE * timeInSeconds) {
+        if (Math.random() < HEALTH_CHANCE * timeInSeconds && this.lives < START_LIVES) {
             this.spawnPickup(this.health);
         }
 
@@ -203,6 +304,7 @@ class Game extends Engine {
 
         this.checkBulletEnemyCollisions();
         this.checkShipEnemyCollisions();
+        this.checkShipEnemyBulletCollisions();
         this.checkShipPickupCollisions();
 
         this.cleanBullets();
@@ -233,7 +335,7 @@ class Game extends Engine {
     spawnEnemy(type) {
         let enemy = type.clone();
         enemy.x = this.width + Math.random() * ENEMY_SPAWN_DISTANCE;
-        enemy.y = Math.random() * (this.height - enemy.height);
+        enemy.y = Math.random() * (this.height + 200 - enemy.height);
         enemy.health = enemy.imageName == 'enemy1' ? ENEMY1_HEALTH : ENEMY2_HEALTH;
         this.addChild(enemy);
         this.enemies.push(enemy);
@@ -242,17 +344,36 @@ class Game extends Engine {
     spawnPickup(type) {
         let pickup = type.clone();
         pickup.x = this.width;
-        pickup.y = Math.random() * (this.height - pickup.height);
+        pickup.y = Math.random() * (this.height - pickup.height + 200);
         this.addChild(pickup);
         this.pickups.push(pickup);
     }
 
     moveShots(time) {
-        this.shots.forEach(shot => shot.x += BULLET_SPEED * time / 1000);
+        this.shots.forEach(shot => {
+            shot.x += BULLET_SPEED * time / 1000;
+            shot.scale += 0.4;
+        });
     }
 
     moveEnemies(time) {
-        this.enemies.forEach(enemy => enemy.x -= (enemy.imageName == 'enemy1' ? ENEMY1_SPEED : ENEMY2_SPEED) * time / 1000);
+        this.enemies.forEach(enemy => {
+            enemy.x -= (enemy.imageName == 'enemy1' ? ENEMY1_SPEED : ENEMY2_SPEED) * time / 1000;
+            if (enemy.imageName == 'poacher') {
+                if (enemy.x < (this.width / 4) * 3 && !enemy.enemyShooting) {
+                    let bad_bullet = this.bad_bullet.clone();
+                    bad_bullet.scale = 0.1;
+                    bad_bullet.x = enemy.x - enemy.width - 100;
+                    bad_bullet.y = enemy.y - enemy.height + 70;
+                    this.addChild(bad_bullet);
+                    this.bad_bullets.push(bad_bullet);
+                    enemy.enemyShooting = true;
+                }
+            }
+        });
+        this.bad_bullets.forEach(bullet => {
+            bullet.x -= 50;
+        });
     }
 
     movePickups(time) {
@@ -297,6 +418,20 @@ class Game extends Engine {
         this.enemies = this.enemies.filter(enemy => enemiesToRemove.indexOf(enemy) === -1);
     }
 
+    checkShipEnemyBulletCollisions() {
+        let badBulletsToRemove = [];
+
+        this.bad_bullets.forEach(bad_bullet => {
+            if (bad_bullet.hitRect(this.ship).width > 0) {
+                badBulletsToRemove.push(bad_bullet);
+                this.lives -= 1;
+                this.removeChild(bad_bullet);
+            }
+        });
+
+        this.bad_bullets = this.bad_bullets.filter(bad_bullet => badBulletsToRemove.indexOf(bad_bullet) === -1);
+    }
+
     checkShipPickupCollisions() {
         let pickupsToRemove = [];
 
@@ -306,8 +441,9 @@ class Game extends Engine {
                 this.removeChild(pickup);
 
                 switch (pickup.imageName) {
-                    case 'health':
+                    case 'steak':
                         this.lives = Math.min(MAX_LIVES, this.lives + 1);
+                        console.log("lives = " + this.lives);
                         break;
                     case 'ammo':
                         this.rateOfFire = Math.min(MAX_RATE_OF_FIRE, this.rateOfFire + 1);
